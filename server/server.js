@@ -2,9 +2,17 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
+import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
+import { Server } from "socket.io";
 import { verifyToken } from "./middleware/auth.js";
 
 const app = express();
+const httpServer = createServer(app);
+const io = new Server(httpServer, {
+  cors: { origin: "http://localhost:5173", credentials: true },
+});
+
 app.use(cors({ origin: "http://localhost:5173", credentials: true }));
 app.use(express.json());
 
@@ -31,30 +39,53 @@ app.post("/auth/login", (req, res) => {
 // A normal protected route (unchanged, uses the HTTP verifyToken).
 app.get("/api/me", verifyToken, (req, res) => res.json({ user: req.user }));
 
-/* =====================================================================
-   YOUR WORK (Tasks 1-2):
-   1. npm install socket.io
-   2. Wrap this Express app with an HTTP server and attach Socket.io:
-        import { createServer } from "http";
-        import { Server } from "socket.io";
-        const httpServer = createServer(app);
-        const io = new Server(httpServer, {
-          cors: { origin: "http://localhost:5173", credentials: true },
-        });
-   3. (Task: auth) io.use((socket, next) => { ... }) verify the JWT from
-      socket.handshake.auth.token, store the payload on socket.data.user.
-   4. (Task: rooms) io.on("connection", (socket) => {
-        socket.on("room:join", (roomId) => socket.join(roomId));
-        socket.on("chat:message", ({ roomId, text }) => {
-          io.to(roomId).emit("chat:message", { ...message... });
-        });
-      });
-   5. Replace app.listen below with httpServer.listen so Socket.io actually starts.
-   ===================================================================== */
+io.use((socket, next) => {
+  const token = socket.handshake.auth.token;
+  if (typeof token !== "string" || token.length === 0) {
+    return next(new Error("No token provided"));
+  }
+
+  try {
+    socket.data.user = jwt.verify(token, process.env.JWT_SECRET);
+    next();
+  } catch {
+    next(new Error("Invalid token"));
+  }
+});
+
+io.on("connection", (socket) => {
+  socket.on("room:join", (roomId) => {
+    if (typeof roomId === "string" && roomId.length > 0) {
+      socket.join(roomId);
+    }
+  });
+
+  socket.on("chat:message", (payload) => {
+    const { roomId, text } = payload ?? {};
+    if (
+      typeof roomId !== "string" ||
+      roomId.length === 0 ||
+      !socket.rooms.has(roomId) ||
+      typeof text !== "string" ||
+      text.trim().length === 0
+    ) {
+      console.warn(`Rejected invalid chat:message payload from socket ${socket.id}`);
+      return;
+    }
+
+    const message = {
+      id: randomUUID(),
+      text: text.trim(),
+      user: socket.data.user.name,
+      timestamp: Date.now(),
+    };
+    io.to(roomId).emit("chat:message", message);
+  });
+});
 
 const PORT = process.env.PORT ?? 3001;
-app.listen(PORT, () => {
+httpServer.listen(PORT, () => {
   console.log(`Server on http://localhost:${PORT}`);
   console.log("  POST /auth/login");
-  console.log("  Socket.io: NOT set up yet - that is your job.");
+  console.log("  Socket.io: ready for authenticated chat connections");
 });

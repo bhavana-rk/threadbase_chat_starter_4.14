@@ -15,16 +15,15 @@ cd server && cp .env.example .env && npm install && npm start
 cd client && cp .env.development.example .env.development && npm install && npm run dev
 ```
 
-`socket.io` and `socket.io-client` are **not** installed yet - installing them is Task 1.
+The server and client dependencies, including `socket.io` and `socket.io-client`, are
+installed with `npm install` in their respective directories.
 
-## What you will do
+## How it works
 
-1. `npm install socket.io` (server) and `npm install socket.io-client` (client).
-2. In `server/server.js`: wrap the app with `createServer`, attach Socket.io with CORS,
-   add `io.use` JWT auth, add `room:join` and `chat:message` handlers, and switch
-   `app.listen` to `httpServer.listen`.
-3. In `client/src/hooks/useSocket.js`: create the socket with `auth: { token }`, join the
-   room, listen for `chat:message`, and clean up with `socket.off()` + `socket.disconnect()`.
+The server wraps the Express app in an HTTP server, authenticates Socket.io handshakes
+with the JWT from `auth.token`, and broadcasts chat messages only to joined thread rooms.
+The React `useSocket` hook joins the requested room, receives messages, and disconnects
+cleanly when its token or room changes.
 
 `client/src/components/ChatRoom.jsx` is already wired to `useSocket` - once the hook works,
 the UI works.
